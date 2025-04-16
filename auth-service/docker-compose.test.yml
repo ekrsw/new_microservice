@@ -1,21 +1,19 @@
 services:
-  auth-service:
-    container_name: auth-service
+  auth_test_app:
+    container_name: auth-test-app
     build:
       context: .
       dockerfile: docker/Dockerfile
-    restart: always
+    restart: "no"
     env_file:
-      - ../.env
-      - ./.env
+      - ./.env.test
     environment:
-      AUTH_SERVICE_INTERNAL_PORT: "${AUTH_SERVICE_INTERNAL_PORT}"
-      AUTH_SERVICE_EXTERNAL_PORT: "${AUTH_SERVICE_EXTERNAL_PORT}"
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+      AUTH_TEST_INTERNAL_PORT: "${AUTH_TEST_INTERNAL_PORT}"
+      DATABASE_URL: "postgresql+asyncpg://${AUTH_TEST_DB_USER}:${AUTH_TEST_DB_PASSWORD}@${AUTH_TEST_DB_HOST}:${AUTH_TEST_DB_PORT}/${AUTH_TEST_DB}"
     depends_on:
-      auth_db:
+      auth_test_db:
         condition: service_healthy
-      auth_redis:
+      auth_test_redis:
         condition: service_started
     ports:
       - "${AUTH_SERVICE_EXTERNAL_PORT}:${AUTH_SERVICE_INTERNAL_PORT}"
@@ -28,7 +26,7 @@ services:
       - ./tests:/workdir/tests
       - ./pytest.ini:/workdir/pytest.ini
     networks:
-      - auth_network
+      - auth_test_network
     deploy:
       resources:
         limits:
@@ -37,35 +35,32 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-  auth_db:
+  auth_test_db:
     image: postgres:17.4-alpine
-    container_name: auth-db
-    restart: always
+    container_name: auth-test-db
+    restart: "no"
     env_file:
-      - ../.env
-      - ./.env
+      - ../.env.test
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${AUTH_TEST_DB_USER}
+      POSTGRES_PASSWORD: ${AUTH_TEST_DB_PASSWORD}
+      POSTGRES_DB: ${AUTH_TEST_DB}
       TZ: ${TIME_ZONE}
       PGTZ: ${TIME_ZONE}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_TEST_DB_USER} -d ${AUTH_TEST_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     expose:
       - "5432"
-    volumes:
-      - auth_ps_data:/var/lib/postgresql/data
     networks:
-      - auth_network
-  auth_redis:
+      - auth_test_network
+  auth_test_redis:
     image: redis:7.4.2-alpine 
-    container_name: auth-redis
-    restart: always
+    container_name: auth-test-redis
+    restart: "no"
     env_file:
       - ../.env
       - ./.env
@@ -74,13 +69,10 @@ services:
     volumes:
       - auth_redis_data:/data
     networks:
-      - auth_network
+      - auth_test_network
     command: redis-server --appendonly yes
-volumes:
-  auth_ps_data:
-  auth_redis_data:
 
 networks:
-  auth_network:
-    name: ${AUTH_NETWORK}
+  auth_test_network:
+    name: ${AUTH_TEST_NETWORK}
     driver: bridge
