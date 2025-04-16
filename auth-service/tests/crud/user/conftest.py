@@ -1,7 +1,20 @@
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
-from typing import Optional, Literal
+from typing import Optional, Literal, AsyncGenerator
 import os
+import pytest
+import pytest_asyncio
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
+
+# テスト用のモデルをインポート
+from app.models.user import AuthUser
+from app.db.base import Base
+from app.crud.user import CRUDUser, user
+from app.schemas.user import UserCreate, AdminUserCreate
+
 
 class Settings(BaseSettings):
     # 環境設定
@@ -24,7 +37,7 @@ class Settings(BaseSettings):
     AUTH_TEST_DB: str
     
     # Redis設定
-    REDIS_TEST_HOST: str = "auth_redis"
+    REDIS_TEST_HOST: str = "auth_test_redis"
     REDIS_TEST_PORT: int = 6379
     
     # トークン設定
@@ -75,3 +88,74 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# テスト用の非同期エンジンを作成
+test_async_engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.SQLALCHEMY_ECHO,
+    future=True
+)
+
+# テスト用の非同期セッションファクトリを作成
+TestAsyncSessionLocal = sessionmaker(
+    test_async_engine,
+    class_=AsyncSession,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+)
+
+
+@pytest_asyncio.fixture
+async def setup_database():
+    """テスト用データベースをセットアップし、テスト後にクリーンアップする"""
+    # テーブルを作成
+    async with test_async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    
+    yield
+    
+    # テスト終了後にテーブルを削除
+    async with test_async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def db_session(setup_database) -> AsyncGenerator[AsyncSession, None]:
+    """テスト用の非同期データベースセッションを提供する"""
+    async with TestAsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.rollback()
+            await session.close()
+
+
+@pytest_asyncio.fixture
+async def create_test_user(db_session: AsyncSession) -> AsyncGenerator[AuthUser, None]:
+    """テスト用のユーザーを作成する"""
+    test_user = UserCreate(
+        username="test_user",
+        password="test_password"
+    )
+    
+    db_user = await user.create(db_session, test_user)
+    await db_session.commit()
+    
+    yield db_user
+
+
+@pytest_asyncio.fixture
+async def create_admin_user(db_session: AsyncSession) -> AsyncGenerator[AuthUser, None]:
+    """テスト用の管理者ユーザーを作成する"""
+    admin_user = AdminUserCreate(
+        username="admin_user",
+        password="admin_password",
+        is_admin=True
+    )
+    
+    db_admin = await user.create(db_session, admin_user)
+    await db_session.commit()
+    
+    yield db_admin
