@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 
@@ -81,3 +81,15 @@ class TokenPayload(BaseModel):
 
 class RefreshToken(BaseModel):
     refresh_token: str
+
+
+class TokenVerifyRequest(BaseModel):
+    token: str
+
+
+class TokenVerifyResponse(BaseModel):
+    valid: bool
+    user_id: Optional[str] = None
+    email: Optional[str] = None
+    roles: List[str] = []
+    error: Optional[str] = None

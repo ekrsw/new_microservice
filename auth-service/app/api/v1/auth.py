@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.crud.user import user
 from app.db.session import get_db
-from app.schemas.user import PasswordUpdate, AdminPasswordUpdate, User as UserResponse, Token, RefreshToken
+from app.schemas.user import PasswordUpdate, AdminPasswordUpdate, User as UserResponse, Token, RefreshToken, TokenVerifyRequest, TokenVerifyResponse
 from app.core.security import (
     verify_password, 
     create_access_token, 
@@ -193,6 +193,46 @@ async def update_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="パスワード更新中にエラーが発生しました"
         )
+
+
+@router.post("/verify", response_model=TokenVerifyResponse)
+async def verify_token_endpoint(
+    request: Request,
+    token_data: TokenVerifyRequest
+) -> Any:
+    """
+    トークンを検証するエンドポイント
+    """
+    logger = get_request_logger(request)
+    logger.info("トークン検証リクエスト")
+    
+    try:
+        # トークンの検証
+        payload = await verify_token(token_data.token)
+        
+        if not payload:
+            logger.warning("トークン検証失敗: 無効なトークン")
+            return {
+                "valid": False,
+                "error": "無効なトークンです"
+            }
+        
+        logger.info(f"トークン検証成功: ユーザーID={payload.get('sub')}")
+        
+        # TODO: 必要に応じてトークンのブラックリスト確認ロジックを追加
+        
+        return {
+            "valid": True,
+            "user_id": payload.get("sub"),
+            "email": payload.get("email"),
+            "roles": payload.get("roles", [])
+        }
+    except Exception as e:
+        logger.error(f"トークン検証中にエラーが発生しました: {str(e)}", exc_info=True)
+        return {
+            "valid": False,
+            "error": f"トークン検証エラー: {str(e)}"
+        }
 
 
 @router.post("/admin/update/password", response_model=UserResponse)
