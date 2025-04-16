@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from uuid import UUID
 
 from app.core.config import settings
-from app.core.security import verify_refresh_token, verify_token, verify_token_with_fallback
+from app.core.security import verify_refresh_token, verify_token
 from app.models.user import AuthUser
 from app.crud.user import user as user_crud
 from app.db.session import get_db
@@ -39,7 +39,7 @@ async def get_current_user(
     
     try:
         # 移行期間中は両方の方式をサポート
-        payload = await verify_token_with_fallback(token)
+        payload = await verify_token(token)
         if payload is None:
             raise credentials_exception
             

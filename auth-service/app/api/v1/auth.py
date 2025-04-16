@@ -19,7 +19,7 @@ from app.core.security import (
     create_refresh_token, 
     verify_refresh_token,
     revoke_refresh_token,
-    verify_token_with_fallback
+    verify_token
 )
 from app.core.config import settings
 from app.api.deps import validate_refresh_token, get_current_user, get_current_admin_user

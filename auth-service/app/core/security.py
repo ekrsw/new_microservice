@@ -55,36 +55,13 @@ async def verify_token(token: str) -> Optional[Dict[str, Any]]:
     """
     try:
         # 公開鍵を使用してトークンを検証
-        payload = jwt.decode(
-            token, 
-            settings.PUBLIC_KEY, 
-            algorithms=[settings.ALGORITHM]
-        )
+        payload = jwt.decode(token,
+                             settings.PUBLIC_KEY,
+                             algorithms=[settings.ALGORITHM]
+                             )
         return payload
     except JWTError:
         return None
-
-async def verify_token_with_fallback(token: str) -> Optional[Dict[str, Any]]:
-    """
-    両方の方式をサポートする移行期間用のトークン検証関数
-    
-    Args:
-        token: 検証するJWTトークン
-        
-    Returns:
-        Optional[Dict[str, Any]]: トークンが有効な場合はペイロード、無効な場合はNone
-    """
-    # まず新しい非対称鍵で検証を試みる
-    try:
-        payload = jwt.decode(token, settings.PUBLIC_KEY, algorithms=["RS256"])
-        return payload
-    except JWTError:
-        # 失敗したら古い対称鍵で検証を試みる
-        try:
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-            return payload
-        except JWTError:
-            return None
 
 async def create_refresh_token(user_id: str) -> str:
     """
