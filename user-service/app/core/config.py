@@ -22,13 +22,6 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str
     POSTGRES_DB: str
 
-    # テスト用データベース設定
-    TEST_POSTGRES_USER: str
-    TEST_POSTGRES_PASSWORD: str
-    TEST_POSTGRES_HOST: str
-    TEST_POSTGRES_PORT: str
-    TEST_POSTGRES_DB: str
-    
     # トークン設定
     SECRET_KEY: str
     ALGORITHM: str = "RS256"  # HS256からRS256に変更
@@ -41,27 +34,7 @@ class Settings(BaseSettings):
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
-    # テスト用データベースURL
-    # コンテナ内でテストするため、Portは5432に固定
-    @property
-    def TEST_DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.TEST_POSTGRES_USER}:{self.TEST_POSTGRES_PASSWORD}@{self.TEST_POSTGRES_HOST}:5432/{self.TEST_POSTGRES_DB}"
-
     SQLALCHEMY_ECHO: bool = False  # SQLAlchemyのログ出力設定を追加
-    
-    @property
-    def REDIS_URL(self) -> str:
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
-    
-    @property
-    def PRIVATE_KEY(self) -> str:
-        """秘密鍵の内容を読み込む"""
-        try:
-            with open(self.PRIVATE_KEY_PATH, "r") as f:
-                return f.read()
-        except FileNotFoundError:
-            # 開発環境では環境変数から直接読み込む選択肢も
-            return os.environ.get("PRIVATE_KEY", "")
 
     @property
     def PUBLIC_KEY(self) -> str:

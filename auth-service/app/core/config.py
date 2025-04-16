@@ -21,13 +21,6 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str
     POSTGRES_PORT: str
     POSTGRES_DB: str
-
-    # テスト用データベース設定
-    TEST_POSTGRES_USER: str
-    TEST_POSTGRES_PASSWORD: str
-    TEST_POSTGRES_HOST: str
-    TEST_POSTGRES_PORT: str
-    TEST_POSTGRES_DB: str
     
     # Redis設定
     REDIS_HOST: str = "auth_redis"
@@ -44,12 +37,6 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-
-    # テスト用データベースURL
-    # コンテナ内でテストするため、Portは5432に固定
-    @property
-    def TEST_DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.TEST_POSTGRES_USER}:{self.TEST_POSTGRES_PASSWORD}@{self.TEST_POSTGRES_HOST}:5432/{self.TEST_POSTGRES_DB}"
 
     SQLALCHEMY_ECHO: bool = False  # SQLAlchemyのログ出力設定を追加
     
