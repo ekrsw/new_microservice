@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     
     # トークン設定
-    SECRET_KEY: str
     ALGORITHM: str = "RS256"  # HS256からRS256に変更
     PRIVATE_KEY_PATH: str = "keys/private.pem"  # 秘密鍵のパス
     PUBLIC_KEY_PATH: str = "keys/public.pem"   # 公開鍵のパス

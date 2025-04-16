@@ -214,10 +214,10 @@ async def verify_token_endpoint(
         
         if not payload:
             logger.warning("トークン検証失敗: 無効なトークン")
-            return {
-                "valid": False,
-                "error": "無効なトークンです"
-            }
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="無効なトークンです",
+            )
         
         logger.info(f"トークン検証成功: ユーザーID={payload.get('sub')}")
         
@@ -231,10 +231,10 @@ async def verify_token_endpoint(
         }
     except Exception as e:
         logger.error(f"トークン検証中にエラーが発生しました: {str(e)}", exc_info=True)
-        return {
-            "valid": False,
-            "error": f"トークン検証エラー: {str(e)}"
-        }
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"トークン検証中にエラーが発生しました: {str(e)}"
+        )
 
 
 @router.post("/admin/update/password", response_model=UserResponse)
