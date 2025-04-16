@@ -1,0 +1,110 @@
+services:
+  auth-service:
+    container_name: new_auth-service
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: always
+    env_file:
+      - ../.env
+      - ./.env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+    depends_on:
+      auth_db:
+        condition: service_healthy
+      auth_test_db:
+        condition: service_healthy
+      auth_redis:
+        condition: service_started
+    ports:
+      - "${AUTH_SERVICE_EXTERNAL_PORT}:${AUTH_SERVICE_INTERNAL_PORT}"
+    expose:
+      - "${AUTH_SERVICE_INTERNAL_PORT}"
+    volumes:
+      - ./app:/workdir/app
+      - ./migrations:/workdir/migrations
+      - ./alembic.ini:/workdir/alembic.ini
+      - ./tests:/workdir/tests
+      - ./pytest.ini:/workdir/pytest.ini
+    networks:
+      - auth_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+  auth_db:
+    image: postgres:17.4-alpine
+    container_name: auth-db
+    restart: always
+    env_file:
+      - ../.env
+      - ./.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${TIME_ZONE}
+      PGTZ: ${TIME_ZONE}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - auth_network
+  auth_test_db:
+    image: postgres:17.4-alpine
+    container_name: auth-test-db
+    restart: "no"
+    env_file:
+      - ../.env
+      - ./.env
+    environment:
+      POSTGRES_USER: ${TEST_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${TEST_POSTGRES_DB}
+      TZ: ${TIME_ZONE}
+      PGTZ: ${TIME_ZONE}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER} -d ${TEST_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "${TEST_POSTGRES_PORT}:5432"
+    networks:
+      - auth_network
+      
+  auth_redis:
+    image: redis:7.4.2-alpine 
+    container_name: auth-redis
+    restart: always
+    env_file:
+      - ../.env
+      - ./.env
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - auth_network
+    command: redis-server --appendonly yes
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  auth_network:
+    name: ${AUTH_NETWORK}
+    driver: bridge

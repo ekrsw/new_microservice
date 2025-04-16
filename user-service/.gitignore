@@ -1,0 +1,18 @@
+# Python関連
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# データベース関連
+test.db
+
+# マイグレーション関連
+migrations/version/*
+!migrations/version/.gitkeep
+
+# 環境設定
+.env
+
+# Mac関連
+.DS_Store

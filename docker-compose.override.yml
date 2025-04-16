@@ -1,0 +1,12 @@
+services:
+  auth-service:
+    networks:
+      - microservice_network
+  user-service:
+    networks:
+      - microservice_network
+
+networks:
+  microservice_network:
+    name: "${COMMON_NETWORK}"
+    driver: bridge

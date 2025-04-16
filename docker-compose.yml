@@ -1,0 +1,32 @@
+# 各マイクロサービスを参照
+include:
+  - path: ./auth-service/docker-compose.yml
+  - path: ./user-service/docker-compose.yml
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.1.0-rc.2-management
+    container_name: rabbitmq
+    restart: always
+    env_file:
+      - ./.env
+    ports:
+      - "${RABBITMQ_MANAGEMENT_PORT}:15672" # RabbitMQ Management UI
+      - "${RABBITMQ_PORT}:5672"   # RabbitMQ AMQP protocol
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - microservice_network
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+# ボリュームの定義
+volumes:
+  rabbitmq_data:
+
+# 共通ネットワークの定義
+networks:
+  microservice_network:
+    name: "${COMMON_NETWORK}"
+    driver: bridge  
+  
