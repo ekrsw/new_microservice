@@ -170,8 +170,8 @@ if __name__ == "__main__":
     
     # アプリケーション起動時のログ
     app_logger.info(
-        f"Starting auth-service in {settings.ENVIRONMENT} mode "
+        f"Starting user-service in {settings.ENVIRONMENT} mode "
         f"(Log level: {settings.LOG_LEVEL})"
     )
     
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8081)
