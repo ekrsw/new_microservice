@@ -90,6 +90,6 @@ class TokenVerifyRequest(BaseModel):
 class TokenVerifyResponse(BaseModel):
     valid: bool
     user_id: Optional[str] = None
-    email: Optional[str] = None
+    username: Optional[str] = None
     roles: List[str] = []
     error: Optional[str] = None

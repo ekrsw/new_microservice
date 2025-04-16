@@ -63,7 +63,8 @@ async def login(
     # アクセストークン生成
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = await create_access_token(
-        data={"sub": str(db_user.id)},
+        data={"sub": str(db_user.id),
+              "username": db_user.username},
         expires_delta=access_token_expires
     )
     
@@ -111,7 +112,8 @@ async def refresh_token(
         # 新しいアクセストークンの生成
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = await create_access_token(
-            data={"sub": str(db_user.id)},
+            data={"sub": str(db_user.id),
+                  "username": db_user.username},
             expires_delta=access_token_expires
         )
         
@@ -224,7 +226,7 @@ async def verify_token_endpoint(
         return {
             "valid": True,
             "user_id": payload.get("sub"),
-            "email": payload.get("email"),
+            "username": payload.get("username"),
             "roles": payload.get("roles", [])
         }
     except Exception as e:
