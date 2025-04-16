@@ -13,8 +13,6 @@ services:
     depends_on:
       user_db:
         condition: service_healthy
-      user_test_db:
-        condition: service_healthy
     ports:
       - "${USER_SERVICE_EXTERNAL_PORT}:${USER_SERVICE_INTERNAL_PORT}"
     expose:
@@ -54,44 +52,16 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    ports:
-      - "${POSTGRES_PORT}:5432"
+    expose:
+      - "5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - user_ps_data:/var/lib/postgresql/data
     networks:
       - user_network
-  user_test_db:
-    image: postgres:17.4-alpine
-    container_name: user-test-db
-    restart: "no"
-    env_file:
-      # - ../.env
-      - ./.env
-    environment:
-      POSTGRES_USER: ${TEST_POSTGRES_USER}
-      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD}
-      POSTGRES_DB: ${TEST_POSTGRES_DB}
-      TZ: ${TIME_ZONE}
-      PGTZ: ${TIME_ZONE}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER} -d ${TEST_POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    ports:
-      - "${TEST_POSTGRES_PORT}:5432"
-    networks:
-      - user_network
-      - microservice_network
-
 volumes:
-  postgres_data:
+  user_ps_data:
 
 networks:
   user_network:
     name: ${USER_NETWORK}
-    driver: bridge
-  microservice_network:
-    name: microservice_network
     driver: bridge
