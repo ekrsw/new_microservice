@@ -5,6 +5,8 @@ import secrets
 import redis.asyncio as redis
 from typing import Optional, Dict, Any
 from .config import settings
+import uuid
+from app.core.logging import app_logger
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -26,6 +28,8 @@ async def create_access_token(data: Dict[str, Any], expires_delta: Optional[time
         str: 生成されたJWTトークン
     """
     to_encode = data.copy()
+    jti = str(uuid.uuid4())
+    to_encode.update({"jti": jti})
     
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
@@ -43,6 +47,62 @@ async def create_access_token(data: Dict[str, Any], expires_delta: Optional[time
     
     return encoded_jwt
 
+# ブラックリストに追加する関数
+async def blacklist_token(token: str) -> bool:
+    """トークンをブラックリストに追加する"""
+    # ブラックリスト機能が無効の場合は常にTrue（成功）を返す
+    if not settings.TOKEN_BLACKLIST_ENABLED:
+        return True
+        
+    try:
+        # ここではブラックリストチェックを除外したトークン検証が必要
+        # そうしないと無限ループになるので、直接JWTデコードする
+        try:
+            payload = jwt.decode(token,
+                               settings.PUBLIC_KEY,
+                               algorithms=[settings.ALGORITHM])
+        except JWTError:
+            return False
+            
+        if not payload:
+            return False
+            
+        jti = payload.get("jti")
+        if not jti:
+            return False  # jtiがない場合は古いトークン形式
+            
+        exp = payload.get("exp")
+        
+        # 有効期限を計算
+        now = datetime.now(UTC).timestamp()
+        ttl = max(int(exp - now), 0)
+        
+        # Redisに保存
+        r = redis.from_url(settings.REDIS_URL)
+        await r.setex(f"blacklist_token:{jti}", ttl, "1")
+        await r.aclose()
+        return True
+    except Exception as e:
+        app_logger.error(f"トークンのブラックリスト登録中にエラーが発生しました: {str(e)}", exc_info=True)
+        return False
+
+# ブラックリストチェック関数
+async def is_token_blacklisted(payload: Dict[str, Any]) -> bool:
+    """トークンがブラックリストに登録されているか確認"""
+    # ブラックリスト機能が無効の場合は常にFalse（ブラックリストされていない）を返す
+    if not settings.TOKEN_BLACKLIST_ENABLED:
+        return False
+        
+    jti = payload.get("jti")
+    if not jti:
+        return False  # jtiがない場合は古いトークン形式なのでブラックリスト非対象
+        
+    r = redis.from_url(settings.REDIS_URL)
+    result = await r.get(f"blacklist_token:{jti}")
+    await r.aclose()
+    
+    return result is not None
+
 async def verify_token(token: str) -> Optional[Dict[str, Any]]:
     """
     JWTトークンを検証し、ペイロードを返す関数
@@ -59,6 +119,11 @@ async def verify_token(token: str) -> Optional[Dict[str, Any]]:
                              settings.PUBLIC_KEY,
                              algorithms=[settings.ALGORITHM]
                              )
+        
+        # ブラックリストチェック
+        if await is_token_blacklisted(payload):
+            return None
+        
         return payload
     except JWTError:
         return None

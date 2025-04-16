@@ -5,21 +5,22 @@ from uuid import UUID
 from jose import JWTError, jwt
 from pydantic import ValidationError
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from app.crud.user import user
 from app.db.session import get_db
-from app.schemas.user import PasswordUpdate, AdminPasswordUpdate, User as UserResponse, Token, RefreshToken, TokenVerifyRequest, TokenVerifyResponse
+from app.schemas.user import PasswordUpdate, AdminPasswordUpdate, User as UserResponse, Token, RefreshToken, LogoutRequest, TokenVerifyRequest, TokenVerifyResponse
 from app.core.security import (
     verify_password, 
     create_access_token, 
     create_refresh_token, 
     verify_refresh_token,
     revoke_refresh_token,
-    verify_token
+    verify_token,
+    blacklist_token
 )
 from app.core.config import settings
 from app.api.deps import validate_refresh_token, get_current_user, get_current_admin_user
@@ -135,19 +136,25 @@ async def refresh_token(
 @router.post("/logout")
 async def logout(
     request: Request,
-    token_data: RefreshToken
+    token_data: LogoutRequest
     ) -> Any:
     """
-    ログアウトしてリフレッシュトークンを無効化するエンドポイント
+    ログアウトしてリフレッシュトークンとアクセストークンを無効化するエンドポイント
     """
     logger = get_request_logger(request)
     logger.info("ログアウトリクエスト")
     
     try:
         # リフレッシュトークンを無効化
-        result = await revoke_refresh_token(token_data.refresh_token)
+        refresh_result = await revoke_refresh_token(token_data.refresh_token)
+
+        # アクセストークンをブラックリストに追加
+        blacklist_result = False
+        if token_data.access_token:
+            blacklist_result = await blacklist_token(token_data.access_token)
+            logger.info(f"アクセストークンのブラックリスト登録: {blacklist_result}")
         
-        if not result:
+        if not refresh_result and not blacklist_result:
             logger.warning("ログアウト失敗: 無効なトークン")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -166,7 +173,8 @@ async def update_password(
     request: Request,
     password_update: PasswordUpdate,
     current_user: AuthUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    authorization: str = Header(None)
 ) -> Any:
     """
     ユーザーのパスワードを更新するエンドポイント
@@ -187,6 +195,13 @@ async def update_password(
     # パスワード更新
     try:
         updated_user = await user.update_password(db, current_user, password_update.new_password)
+        
+        # 現在のアクセストークンをブラックリストに追加
+        if authorization and authorization.startswith("Bearer "):
+            access_token = authorization.replace("Bearer ", "")
+            await blacklist_token(access_token)
+            logger.info(f"パスワード変更に伴いアクセストークンをブラックリストに追加: ユーザーID={updated_user.id}")
+            
         logger.info(f"パスワード更新成功: ユーザーID={updated_user.id}")
         return updated_user
     except Exception as e:
@@ -209,30 +224,39 @@ async def verify_token_endpoint(
     logger.info("トークン検証リクエスト")
     
     try:
-        # トークンの検証
+        # トークンの検証（ブラックリストチェックを含む）
         payload = await verify_token(token_data.token)
         
+        # ペイロードが取得できない場合（無効なトークン、ブラックリスト登録済み）
         if not payload:
-            logger.warning("トークン検証失敗: 無効なトークン")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="無効なトークンです",
-            )
-        
+            logger.warning("トークン検証失敗: 無効なトークンまたはブラックリスト登録済み")
+            # 401エラーではなく、正常なレスポンスとして検証結果を返す
+            return {
+                "valid": False,
+                "error": "無効なトークンまたはブラックリスト登録済み"
+            }
+
         logger.info(f"トークン検証成功: ユーザーID={payload.get('sub')}")
         
-        # TODO: 必要に応じてトークンのブラックリスト確認ロジックを追加
-        
+        # 有効なトークンの場合の正常レスポンス
         return {
             "valid": True,
             "user_id": payload.get("sub"),
             "username": payload.get("username"),
             "roles": payload.get("roles", [])
         }
-    except Exception as e:
-        logger.error(f"トークン検証中にエラーが発生しました: {str(e)}", exc_info=True)
+    except JWTError as e:
+        # JWT形式エラーは400 Bad Requestとして扱う
+        logger.error(f"JWTエラー: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"トークンの形式が不正です: {str(e)}"
+        )
+    except Exception as e:
+        # その他の予期しないエラーは500 Internal Server Errorとして扱う
+        logger.error(f"トークン検証中にエラーが発生しました: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"トークン検証中にエラーが発生しました: {str(e)}"
         )
 
@@ -242,7 +266,8 @@ async def admin_update_password(
     request: Request,
     password_update: AdminPasswordUpdate,
     current_user: AuthUser = Depends(get_current_admin_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    authorization: str = Header(None)
 ) -> Any:
     """
     管理者によるユーザーのパスワード更新エンドポイント
@@ -265,6 +290,10 @@ async def admin_update_password(
     # パスワード更新
     try:
         updated_user = await user.update_password(db, db_user, password_update.new_password)
+        
+        # ユーザーの全トークンをブラックリストに追加する機能はここでは実装しません
+        # ただし管理者のアクセストークンはブラックリスト登録不要です
+        
         logger.info(f"パスワード更新成功: ユーザーID={updated_user.id}, 管理者={current_user.username}")
         return updated_user
     except Exception as e:
