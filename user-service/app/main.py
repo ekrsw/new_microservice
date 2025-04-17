@@ -69,20 +69,6 @@ async def request_middleware(request: Request, call_next):
     # リクエストロガーの取得
     logger = get_request_logger(request)
 
-    ########################################
-    # リクエストヘッダーの取得とログ記録
-    headers = dict(request.headers)
-    # 機密情報（認証情報など）をマスク
-    if "authorization" in headers:
-        auth_header = headers["authorization"]
-        if auth_header.startswith("Bearer "):
-            # トークンの先頭部分だけを表示し、残りをマスク
-            token_part = auth_header.split(" ")[1]
-            if len(token_part) > 10:
-                masked_token = token_part[:10] + "..." 
-                headers["authorization"] = f"Bearer {masked_token}"
-    ########################################
-    
     # リクエスト情報のロギング
     logger.info(
         f"Request started: {request.method} {request.url.path} "
@@ -155,7 +141,7 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/")
 async def root():
     return {
-        "message": "認証サービスAPI",
+        "message": "ユーザー管理サービスAPI",
         "version": "1.0.0",
         "docs_url": "/docs"
     }
