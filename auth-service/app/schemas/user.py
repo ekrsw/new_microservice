@@ -79,13 +79,21 @@ class TokenPayload(BaseModel):
     sub: Optional[str] = None
 
 
-class RefreshToken(BaseModel):
+# リフレッシュトークンリクエスト用のスキーマ（access_tokenを必須とする）
+class RefreshTokenRequest(BaseModel):
     refresh_token: str
+    access_token: str
 
 
+# ログアウトリクエスト用のスキーマ（access_tokenを必須とする）
 class LogoutRequest(BaseModel):
     refresh_token: str
-    access_token: Optional[str] = None
+    access_token: str
+
+
+# 互換性のために残す（後で削除予定）
+class RefreshToken(Token):
+    pass
 
 
 class TokenVerifyRequest(BaseModel):

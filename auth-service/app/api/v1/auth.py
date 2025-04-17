@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.crud.user import user
 from app.db.session import get_db
-from app.schemas.user import PasswordUpdate, AdminPasswordUpdate, User as UserResponse, Token, RefreshToken, LogoutRequest, TokenVerifyRequest, TokenVerifyResponse
+from app.schemas.user import PasswordUpdate, AdminPasswordUpdate, User as UserResponse, Token, RefreshToken, RefreshTokenRequest, LogoutRequest, TokenVerifyRequest, TokenVerifyResponse
 from app.core.security import (
     verify_password, 
     create_access_token, 
@@ -84,88 +84,165 @@ async def login(
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
     request: Request,
-    token_data: RefreshToken,
+    token_data: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
     ) -> Any:
     """
     リフレッシュトークンを使用して新しいアクセストークンを発行するエンドポイント
+    - アクセストークンとリフレッシュトークンの両方が必要
+    - 古いトークンは無効化される
     """
     logger = get_request_logger(request)
     logger.info("トークン更新リクエスト")
     
-    try:
-        # リフレッシュトークンの検証
-        user_id = await validate_refresh_token(token_data.refresh_token)
-        
-        # ユーザーの存在確認
-        db_user = await user.get_by_id(db, id=UUID(user_id))
-        if not db_user:
-            logger.warning(f"トークン更新失敗: ユーザーID '{user_id}' が存在しません")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="無効なユーザーです",
-                headers={"WWW-Authenticate": "Bearer"},
+    # トランザクション開始
+    async with db.begin():
+        try:
+            # リフレッシュトークンの検証
+            try:
+                user_id = await validate_refresh_token(token_data.refresh_token)
+            except jwt.JWTError as e:
+                logger.warning(f"リフレッシュトークン検証失敗: JWT形式エラー: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="無効なリフレッシュトークンです",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            except Exception as e:
+                logger.warning(f"リフレッシュトークン検証失敗: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="リフレッシュトークンの検証に失敗しました",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # ユーザーの存在確認
+            db_user = await user.get_by_id(db, id=UUID(user_id))
+            if not db_user:
+                logger.warning(f"トークン更新失敗: ユーザーID '{user_id}' が存在しません")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="無効なユーザーです",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # 古いリフレッシュトークンを無効化
+            refresh_result = await revoke_refresh_token(token_data.refresh_token)
+            if not refresh_result:
+                logger.warning(f"リフレッシュトークン無効化失敗: {token_data.refresh_token}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="リフレッシュトークンの無効化に失敗しました",
+                )
+
+            # 古いアクセストークンをブラックリストに追加（必須）
+            blacklist_result = await blacklist_token(token_data.access_token)
+            logger.info(f"アクセストークンのブラックリスト登録: {blacklist_result}")
+            if not blacklist_result:
+                logger.warning(f"アクセストークンのブラックリスト登録失敗: {token_data.access_token}")
+                # 登録に失敗しても処理を続行するが、ログには残す
+
+            # 新しいアクセストークンの生成
+            access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = await create_access_token(
+                data={"sub": str(db_user.id),
+                      "username": db_user.username},
+                expires_delta=access_token_expires
             )
-        
-        # 古いリフレッシュトークンを無効化
-        await revoke_refresh_token(token_data.refresh_token)
-        
-        # 新しいアクセストークンの生成
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = await create_access_token(
-            data={"sub": str(db_user.id),
-                  "username": db_user.username},
-            expires_delta=access_token_expires
-        )
-        
-        # 新しいリフレッシュトークンの生成
-        refresh_token = await create_refresh_token(user_id=str(db_user.id))
-        
-        logger.info(f"トークン更新成功: ユーザーID={db_user.id}")
-        
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer"
-        }
-    except Exception as e:
-        logger.error(f"トークン更新中にエラーが発生しました: {str(e)}", exc_info=True)
-        raise
+            
+            # 新しいリフレッシュトークンの生成
+            refresh_token = await create_refresh_token(user_id=str(db_user.id))
+            
+            logger.info(f"トークン更新成功: ユーザーID={db_user.id}")
+            
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer"
+            }
+        except HTTPException:
+            # 既に適切なHTTPExceptionが発生している場合はそのまま再送出
+            raise
+        except JWTError as e:
+            # JWT形式エラーは400 Bad Requestとして扱う
+            logger.error(f"JWTエラー: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"トークンの形式が不正です: {str(e)}"
+            )
+        except Exception as e:
+            # その他の予期しないエラーは500 Internal Server Errorとして扱う
+            logger.error(f"トークン更新中にエラーが発生しました: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"トークン更新中にエラーが発生しました: {str(e)}"
+            )
 
 
 @router.post("/logout")
 async def logout(
     request: Request,
-    token_data: LogoutRequest
+    token_data: LogoutRequest,
+    db: AsyncSession = Depends(get_db)
     ) -> Any:
     """
     ログアウトしてリフレッシュトークンとアクセストークンを無効化するエンドポイント
+    - アクセストークンとリフレッシュトークンの両方が必要
+    - 両方のトークンを無効化する
     """
     logger = get_request_logger(request)
     logger.info("ログアウトリクエスト")
     
-    try:
-        # リフレッシュトークンを無効化
-        refresh_result = await revoke_refresh_token(token_data.refresh_token)
+    # トランザクション開始
+    async with db.begin():
+        try:
+            # リフレッシュトークンを無効化
+            refresh_result = await revoke_refresh_token(token_data.refresh_token)
+            if not refresh_result:
+                logger.warning(f"リフレッシュトークン無効化失敗: {token_data.refresh_token}")
+                # 失敗をログに残すが、アクセストークンの処理は続行
 
-        # アクセストークンをブラックリストに追加
-        blacklist_result = False
-        if token_data.access_token:
+            # アクセストークンをブラックリストに追加（必須）
             blacklist_result = await blacklist_token(token_data.access_token)
             logger.info(f"アクセストークンのブラックリスト登録: {blacklist_result}")
-        
-        if not refresh_result and not blacklist_result:
-            logger.warning("ログアウト失敗: 無効なトークン")
+            if not blacklist_result:
+                logger.warning(f"アクセストークンのブラックリスト登録失敗: {token_data.access_token}")
+                # 失敗をログに残す
+            
+            # 両方のトークン処理が失敗した場合はエラーを返す
+            if not refresh_result and not blacklist_result:
+                logger.warning("ログアウト失敗: 両方のトークンが無効")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="無効なトークンです。ログアウト処理に失敗しました。",
+                )
+            
+            # 少なくとも一方が成功した場合
+            success_message = "ログアウトしました"
+            if not refresh_result:
+                success_message += "（リフレッシュトークンの無効化に失敗しました）"
+            if not blacklist_result:
+                success_message += "（アクセストークンのブラックリスト登録に失敗しました）"
+            
+            logger.info(f"ログアウト処理完了: {success_message}")
+            return {"detail": success_message}
+        except HTTPException:
+            # 既に適切なHTTPExceptionが発生している場合はそのまま再送出
+            raise
+        except JWTError as e:
+            # JWT形式エラーは400 Bad Requestとして扱う
+            logger.error(f"JWTエラー: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="無効なトークンです",
+                detail=f"トークンの形式が不正です: {str(e)}"
             )
-        
-        logger.info("ログアウト成功: トークンを無効化しました")
-        return {"detail": "ログアウトしました"}
-    except Exception as e:
-        logger.error(f"ログアウト処理中にエラーが発生しました: {str(e)}", exc_info=True)
-        raise
+        except Exception as e:
+            # その他の予期しないエラーは500 Internal Server Errorとして扱う
+            logger.error(f"ログアウト処理中にエラーが発生しました: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"ログアウト処理中にエラーが発生しました: {str(e)}"
+            )
 
 
 @router.post("/update/password", response_model=UserResponse)
