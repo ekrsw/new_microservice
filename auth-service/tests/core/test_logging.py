@@ -53,7 +53,7 @@ class TestLogging:
         record = logging.LogRecord(
             name="test_logger",
             level=logging.INFO,
-            pathname="",
+            pathname="test_logging.py",
             lineno=123,
             msg="テストメッセージ",
             args=(),

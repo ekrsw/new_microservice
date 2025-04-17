@@ -10,6 +10,13 @@ services:
     environment:
       AUTH_TEST_INTERNAL_PORT: "${AUTH_TEST_INTERNAL_PORT}"
       DATABASE_URL: "postgresql+asyncpg://${AUTH_TEST_DB_USER}:${AUTH_TEST_DB_PASSWORD}@${AUTH_TEST_DB_HOST}:${AUTH_TEST_DB_PORT}/${AUTH_TEST_DB}"
+      POSTGRES_USER: "${AUTH_TEST_DB_USER}"
+      POSTGRES_PASSWORD: "${AUTH_TEST_DB_PASSWORD}"
+      POSTGRES_HOST: "${AUTH_TEST_DB_HOST}"
+      POSTGRES_PORT: "${AUTH_TEST_DB_PORT}"
+      POSTGRES_DB: "${AUTH_TEST_DB}"
+      REDIS_HOST: "${REDIS_TEST_HOST}"
+      REDIS_PORT: "${REDIS_TEST_PORT}"
     depends_on:
       auth_test_db:
         condition: service_healthy

@@ -44,11 +44,15 @@ def client(test_app: FastAPI) -> Generator[TestClient, None, None]:
         yield c
 
 
-@pytest_asyncio.fixture(scope="function")
-async def async_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
-    """非同期テスト用のクライアントを提供"""
-    async with AsyncClient(app=test_app, base_url="http://test") as ac:
-        yield ac
+@pytest.fixture(scope="function")
+def async_client(test_app: FastAPI) -> Generator[TestClient, None, None]:
+    """
+    テスト用のクライアントを提供
+    注: 実際にはAsyncClientではなくTestClientを返しますが、
+    既存のテストコードと互換性を保つため命名を維持しています
+    """
+    with TestClient(test_app) as client:
+        yield client
 
 
 @pytest_asyncio.fixture(scope="function")
