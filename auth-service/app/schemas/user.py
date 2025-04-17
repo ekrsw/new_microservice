@@ -21,6 +21,12 @@ class AdminUserCreate(UserBase):
     password: str = Field(..., min_length=1, max_length=16)
 
 
+# ユーザー更新時に使うプロパティ（パスワード更新は含まない）
+class UserUpdate(UserBase):
+    username: Optional[str] = Field(None, max_length=50)
+    is_active: Optional[bool] = None
+
+
 # パスワード更新時に使うプロパティ
 class PasswordUpdate(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=16)
