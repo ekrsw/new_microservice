@@ -6,7 +6,7 @@ services:
       dockerfile: docker/Dockerfile
     restart: "no"
     env_file:
-      - ./.env.test
+      - .env.test
     environment:
       AUTH_TEST_INTERNAL_PORT: "${AUTH_TEST_INTERNAL_PORT}"
       DATABASE_URL: "postgresql+asyncpg://${AUTH_TEST_DB_USER}:${AUTH_TEST_DB_PASSWORD}@${AUTH_TEST_DB_HOST}:${AUTH_TEST_DB_PORT}/${AUTH_TEST_DB}"
@@ -40,7 +40,7 @@ services:
     container_name: auth-test-db
     restart: "no"
     env_file:
-      - ../.env.test
+      - .env.test
     environment:
       POSTGRES_USER: ${AUTH_TEST_DB_USER}
       POSTGRES_PASSWORD: ${AUTH_TEST_DB_PASSWORD}
@@ -62,8 +62,7 @@ services:
     container_name: auth-test-redis
     restart: "no"
     env_file:
-      - ../.env
-      - ./.env
+      - .env.test
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -76,3 +75,7 @@ networks:
   auth_test_network:
     name: ${AUTH_TEST_NETWORK}
     driver: bridge
+
+volumes:
+  auth_redis_data:
+    name: auth_test_redis_data
