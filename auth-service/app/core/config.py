@@ -27,12 +27,14 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     
     # トークン設定
-    SECRET_KEY: str
     ALGORITHM: str = "RS256"  # HS256からRS256に変更
     PRIVATE_KEY_PATH: str = "keys/private.pem"  # 秘密鍵のパス
     PUBLIC_KEY_PATH: str = "keys/public.pem"   # 公開鍵のパス
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    
+    # トークンブラックリスト関連の設定
+    TOKEN_BLACKLIST_ENABLED: bool = True
     
     @property
     def DATABASE_URL(self) -> str:
