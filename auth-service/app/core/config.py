@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     # 初期管理者ユーザー設定
     INITIAL_ADMIN_USERNAME: str = "admin"
     INITIAL_ADMIN_PASSWORD: str = "changeme"  # 本番環境では強力なパスワードに変更
+    
+    # RabbitMQ設定
+    RABBITMQ_HOST: str = "rabbitmq"
+    RABBITMQ_PORT: int = 5672
+    RABBITMQ_USER: str = "guest"
+    RABBITMQ_PASSWORD: str = "guest"
+    RABBITMQ_VHOST: str = "/"
+    USER_SYNC_EXCHANGE: str = "user_events"
+    USER_SYNC_ROUTING_KEY: str = "user.sync"
     # データベース設定
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str

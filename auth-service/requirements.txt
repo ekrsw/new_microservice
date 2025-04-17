@@ -22,3 +22,4 @@ sqladmin==0.20.1
 SQLAlchemy==2.0.40
 ulid-py==1.1.0
 uvicorn==0.34.0
+aio-pika==9.3.1

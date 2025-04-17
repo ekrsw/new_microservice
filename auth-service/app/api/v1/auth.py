@@ -1,5 +1,5 @@
 import uuid
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 from datetime import timedelta
 from uuid import UUID
 from jose import JWTError, jwt
@@ -12,6 +12,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app.crud.user import user
 from app.db.session import get_db
+from app.messaging.rabbitmq import (
+    publish_user_created,
+    publish_user_updated,
+    publish_user_deleted,
+    publish_password_changed,
+    publish_user_status_changed
+)
 from app.schemas.user import (
     PasswordUpdate,
     AdminPasswordUpdate,
@@ -73,6 +80,20 @@ async def register_user(
             detail="ユーザーの登録に失敗しました。"
         )
     
+    # ユーザー作成イベントの発行
+    try:
+        user_data = {
+            "id": new_user.id,
+            "username": new_user.username,
+            "is_admin": new_user.is_admin,
+            "is_active": new_user.is_active
+        }
+        await publish_user_created(user_data)
+        logger.info(f"ユーザー作成イベント発行: ID={new_user.id}")
+    except Exception as e:
+        # イベント発行の失敗はログに記録するだけで、APIレスポンスには影響させない
+        logger.error(f"ユーザー作成イベント発行失敗: {str(e)}", exc_info=True)
+    
     logger.info(f"ユーザー登録成功: ID={new_user.id}, ユーザー名={new_user.username}, 管理者={new_user.is_admin}")
     return new_user
 
@@ -109,6 +130,20 @@ async def admin_register_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="ユーザーの登録に失敗しました。"
         )
+    
+    # ユーザー作成イベントの発行
+    try:
+        user_data = {
+            "id": new_user.id,
+            "username": new_user.username,
+            "is_admin": new_user.is_admin,
+            "is_active": new_user.is_active
+        }
+        await publish_user_created(user_data)
+        logger.info(f"ユーザー作成イベント発行: ID={new_user.id}")
+    except Exception as e:
+        # イベント発行の失敗はログに記録するだけで、APIレスポンスには影響させない
+        logger.error(f"ユーザー作成イベント発行失敗: {str(e)}", exc_info=True)
     
     logger.info(f"ユーザー登録成功: ID={new_user.id}, ユーザー名={new_user.username}, 管理者={new_user.is_admin}")
     return new_user
@@ -433,6 +468,26 @@ async def update_user(
     # ユーザー更新
     try:
         updated_user = await user.update(db, db_user, user_in)
+        
+        # ユーザー更新イベントの発行
+        try:
+            user_data = {
+                "id": updated_user.id,
+                "username": updated_user.username,
+                "is_admin": updated_user.is_admin,
+                "is_active": updated_user.is_active
+            }
+            await publish_user_updated(user_data)
+            logger.info(f"ユーザー更新イベント発行: ID={updated_user.id}")
+            
+            # is_active変更の場合は追加イベント発行
+            if user_in.is_active is not None and user_in.is_active != db_user.is_active:
+                await publish_user_status_changed(user_data, user_in.is_active)
+                logger.info(f"ユーザーステータス変更イベント発行: ID={updated_user.id}, is_active={user_in.is_active}")
+        except Exception as e:
+            # イベント発行の失敗はログに記録するだけで、APIレスポンスには影響させない
+            logger.error(f"ユーザー更新イベント発行失敗: {str(e)}", exc_info=True)
+        
         logger.info(f"ユーザー更新成功: ID={updated_user.id}, ユーザー名={updated_user.username}")
         return updated_user
     except IntegrityError:
@@ -482,6 +537,20 @@ async def update_password(
             access_token = authorization.replace("Bearer ", "")
             await blacklist_token(access_token)
             logger.info(f"パスワード変更に伴いアクセストークンをブラックリストに追加: ユーザーID={updated_user.id}")
+        
+        # パスワード変更イベントの発行
+        try:
+            user_data = {
+                "id": updated_user.id,
+                "username": updated_user.username,
+                "is_admin": updated_user.is_admin,
+                "is_active": updated_user.is_active
+            }
+            await publish_password_changed(user_data)
+            logger.info(f"パスワード変更イベント発行: ID={updated_user.id}")
+        except Exception as e:
+            # イベント発行の失敗はログに記録するだけで、APIレスポンスには影響させない
+            logger.error(f"パスワード変更イベント発行失敗: {str(e)}", exc_info=True)
             
         logger.info(f"パスワード更新成功: ユーザーID={updated_user.id}")
         return updated_user
@@ -575,6 +644,20 @@ async def admin_update_password(
         # ユーザーの全トークンをブラックリストに追加する機能はここでは実装しません
         # ただし管理者のアクセストークンはブラックリスト登録不要です
         
+        # パスワード変更イベントの発行
+        try:
+            user_data = {
+                "id": updated_user.id,
+                "username": updated_user.username,
+                "is_admin": updated_user.is_admin,
+                "is_active": updated_user.is_active
+            }
+            await publish_password_changed(user_data)
+            logger.info(f"パスワード変更イベント発行: ID={updated_user.id}")
+        except Exception as e:
+            # イベント発行の失敗はログに記録するだけで、APIレスポンスには影響させない
+            logger.error(f"パスワード変更イベント発行失敗: {str(e)}", exc_info=True)
+        
         logger.info(f"パスワード更新成功: ユーザーID={updated_user.id}, 管理者={current_user.username}")
         return updated_user
     except Exception as e:
@@ -617,6 +700,21 @@ async def delete_user(
     
     # ユーザー削除
     try:
+        # ユーザー削除イベントの発行（データベースから削除する前に実行）
+        try:
+            user_data = {
+                "id": db_user.id,
+                "username": db_user.username,
+                "is_admin": db_user.is_admin,
+                "is_active": db_user.is_active
+            }
+            await publish_user_deleted(user_data)
+            logger.info(f"ユーザー削除イベント発行: ID={db_user.id}")
+        except Exception as e:
+            # イベント発行の失敗はログに記録するだけで、APIレスポンスには影響させない
+            logger.error(f"ユーザー削除イベント発行失敗: {str(e)}", exc_info=True)
+        
+        # データベースからユーザーを削除
         await user.delete(db, db_user)
         logger.info(f"ユーザー削除成功: ID={user_id}, ユーザー名={db_user.username}")
         return Response(status_code=status.HTTP_204_NO_CONTENT)

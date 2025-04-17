@@ -14,6 +14,7 @@ from app.db.init import Database
 from app.db.session import AsyncSessionLocal
 from app.crud.user import user
 from app.schemas.user import AdminUserCreate
+from app.messaging.rabbitmq import rabbitmq_client
 
 # ログディレクトリの作成（ファイルログが有効な場合）
 if settings.LOG_TO_FILE:
@@ -31,6 +32,15 @@ async def lifespan(app: FastAPI):
         db = Database()
         await db.init()
         app_logger.info("Database initialized successfully")
+        
+        # RabbitMQクライアントの初期化
+        try:
+            await rabbitmq_client.initialize()
+            app_logger.info("RabbitMQ connection initialized successfully")
+        except Exception as e:
+            app_logger.error(f"Error initializing RabbitMQ connection: {e}")
+            # RabbitMQ接続エラーはアプリ起動を妨げるべきではない
+            # サービスは引き続き機能し、メッセージングは無効化される
         
         # 初期管理者ユーザーの作成
         admin_username = settings.INITIAL_ADMIN_USERNAME
@@ -65,6 +75,13 @@ async def lifespan(app: FastAPI):
     
     # 終了時の処理
     app_logger.info("Shutting down application")
+    
+    # RabbitMQ接続のクローズ
+    try:
+        await rabbitmq_client.close()
+        app_logger.info("RabbitMQ connection closed")
+    except Exception as e:
+        app_logger.error(f"Error closing RabbitMQ connection: {e}")
 
 
 # FastAPIアプリケーションの作成
