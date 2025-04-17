@@ -12,9 +12,6 @@ class Settings(BaseSettings):
     LOG_TO_FILE: bool = False
     LOG_FILE_PATH: str = "logs/auth_service.log"
     
-    # 初期管理者ユーザー設定
-    INITIAL_ADMIN_USERNAME: str = "admin"
-    INITIAL_ADMIN_PASSWORD: str = "changeme"  # 本番環境では強力なパスワードに変更
     # データベース設定
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
@@ -23,12 +20,7 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
 
     # トークン設定
-    SECRET_KEY: str
-    ALGORITHM: str = "RS256"  # HS256からRS256に変更
-    PRIVATE_KEY_PATH: str = "keys/private.pem"  # 秘密鍵のパス
     PUBLIC_KEY_PATH: str = "keys/public.pem"   # 公開鍵のパス
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     @property
     def DATABASE_URL(self) -> str:
