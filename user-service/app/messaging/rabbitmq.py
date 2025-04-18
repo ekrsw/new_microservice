@@ -128,7 +128,7 @@ class RabbitMQClient:
                 )
                 await db.commit()
                 
-                self.logger.info(f"ユーザー同期成功: ID={synced_user.id}, フルネーム={synced_user.fullname}")
+                self.logger.info(f"ユーザー同期成功: ID={synced_user.id}, ユーザー名={username}")
         except Exception as e:
             self.logger.error(f"ユーザー作成イベント処理エラー: {str(e)}", exc_info=True)
     
