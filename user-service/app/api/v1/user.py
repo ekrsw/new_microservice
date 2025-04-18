@@ -290,7 +290,7 @@ async def delete_user(
 
 
 # ユーザー検索エンドポイント
-@router.get("/users/search", response_model=List[UserResponse])
+@router.get("/search/users", response_model=List[UserResponse])
 async def search_users(
     request: Request,
     username: Optional[str] = None,

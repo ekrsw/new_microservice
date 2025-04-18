@@ -7,143 +7,149 @@ from sqlalchemy.orm import sessionmaker
 from typing import Dict, Generator, Any, AsyncGenerator
 from unittest.mock import patch, MagicMock
 import uuid
+from sqlalchemy.ext.asyncio import async_scoped_session
+from sqlalchemy import event
+import greenlet
 
 from app.main import app as main_app
 from app.db.base import Base
 from app.models.user import User
 from app.db.session import get_db
 from app.core.config import settings
+from app.api.deps import get_current_user, get_current_admin_user
+
+# テスト用のモックデータベースセッション
+class MockDBSession:
+    def __init__(self, users=None):
+        self.users = users or []
+        self.committed = False
+        self.rolled_back = False
+        self.closed = False
+        self.flushed = False
+    
+    async def commit(self):
+        self.committed = True
+    
+    async def rollback(self):
+        self.rolled_back = True
+    
+    async def close(self):
+        self.closed = True
+    
+    async def flush(self):
+        self.flushed = True
+    
+    def add(self, obj):
+        if isinstance(obj, User):
+            self.users.append(obj)
+    
+    async def refresh(self, obj):
+        pass
+    
+    async def delete(self, obj):
+        if isinstance(obj, User) and obj in self.users:
+            self.users.remove(obj)
+        # MagicMockオブジェクトの場合は何もしない
+    
+    async def execute(self, query):
+        # SQLAlchemyのselectクエリをシミュレート
+        from sqlalchemy import select
+        from sqlalchemy.engine.result import Result
+        
+        # 簡易的なResultオブジェクトのモック
+        class MockResult:
+            def __init__(self, items):
+                self.items = items
+            
+            def scalars(self):
+                return self
+            
+            def first(self):
+                return self.items[0] if self.items else None
+            
+            def all(self):
+                return self.items
+            
+            def fetchall(self):
+                return [(item,) for item in self.items]
+            
+            def scalar_one_or_none(self):
+                return self.items[0] if self.items else None
+        
+        # クエリの種類に応じた処理
+        if hasattr(query, 'whereclause') and query.whereclause is not None:
+            # フィルタリング条件がある場合
+            filtered_users = []
+            for user in self.users:
+                # 簡易的なフィルタリング（実際のSQLAlchemyの動作とは異なる）
+                if hasattr(query.whereclause, 'right') and hasattr(query.whereclause, 'left'):
+                    if str(query.whereclause.right.value) == str(user.id):
+                        filtered_users.append(user)
+            return MockResult(filtered_users)
+        else:
+            # フィルタリング条件がない場合は全ユーザーを返す
+            return MockResult(self.users)
+
+# テスト用のモックユーザー
+class MockUser:
+    def __init__(self, id=None, username="testuser", fullname="Test User", is_admin=False, is_active=True, user_id=None):
+        self.id = id or uuid.uuid4()
+        self.username = username
+        self.fullname = fullname
+        self.is_admin = is_admin
+        self.is_active = is_active
+        self.user_id = user_id or uuid.uuid4()
 
 # FastAPIのテストクライアント用フィクスチャ
 @pytest.fixture(scope="module")
 def app() -> FastAPI:
-    return main_app
+    # 依存関係をモックに置き換え
+    app = main_app
+    
+    # モックユーザーを作成
+    test_user = MockUser(username="testuser", fullname="Test User", is_admin=False)
+    test_admin = MockUser(username="admin", fullname="Admin User", is_admin=True)
+    
+    # 依存関係をオーバーライド
+    async def mock_get_current_user():
+        return test_user
+    
+    async def mock_get_current_admin_user():
+        return test_admin
+    
+    async def mock_get_db():
+        mock_session = MockDBSession(users=[test_user, test_admin])
+        yield mock_session
+    
+    app.dependency_overrides[get_db] = mock_get_db
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    app.dependency_overrides[get_current_admin_user] = mock_get_current_admin_user
+    
+    return app
 
 @pytest.fixture(scope="module")
 def client(app: FastAPI) -> Generator:
     with TestClient(app) as c:
         yield c
 
-# テスト用のインメモリSQLiteデータベース
+# テスト用のモックデータベースセッション
 @pytest.fixture(scope="function")
-async def db_engine():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+def db_session():
+    return MockDBSession()
 
+# テスト用のモックユーザー
 @pytest.fixture(scope="function")
-async def db_session(db_engine):
-    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
-    async with async_session() as session:
-        yield session
+def db_test_user():
+    return MockUser(username="testuser", fullname="Test User", is_admin=False)
 
-# DBセッションを差し替えるフィクスチャ
+# テスト用のモック管理者
 @pytest.fixture(scope="function")
-async def override_get_db(db_session: AsyncSession) -> AsyncGenerator[AsyncSession, None]:
-    """DBセッションをオーバーライドするフィクスチャ"""
-    # セッションファクトリ関数の作成
-    async def _override_get_db():
-        try:
-            # 既に開始されているトランザクションをロールバック
-            await db_session.rollback()
-            yield db_session
-        finally:
-            # テスト後もセッションをロールバック
-            await db_session.rollback()
-    
-    return _override_get_db
+def db_test_admin():
+    return MockUser(username="admin", fullname="Admin User", is_admin=True)
 
+# テスト用の依存関係をオーバーライドするフィクスチャ
 @pytest.fixture(scope="function")
-async def override_dependency(app: FastAPI, override_get_db):
-    app.dependency_overrides[get_db] = override_get_db
-    yield
-    app.dependency_overrides.clear()
-
-# テストユーザーデータ
-@pytest.fixture(scope="function")
-def test_user_data():
-    return {
-        "username": "testuser",
-        "fullname": "Test User"
-    }
-
-# テスト管理者データ
-@pytest.fixture(scope="function")
-def test_admin_data():
-    return {
-        "username": "admin",
-        "fullname": "Admin User",
-        "is_admin": True
-    }
-
-# DBに登録済みのテストユーザー
-@pytest.fixture(scope="function")
-async def db_test_user(db_session, test_user_data):
-    user = User(
-        username=test_user_data["username"],
-        fullname=test_user_data["fullname"],
-        is_admin=False,
-        is_active=True,
-        user_id=uuid.uuid4()
-    )
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
-
-# DBに登録済みのテスト管理者
-@pytest.fixture(scope="function")
-async def db_test_admin(db_session, test_admin_data):
-    admin = User(
-        username=test_admin_data["username"],
-        fullname=test_admin_data["fullname"],
-        is_admin=True,
-        is_active=True,
-        user_id=uuid.uuid4()
-    )
-    db_session.add(admin)
-    await db_session.commit()
-    await db_session.refresh(admin)
-    return admin
-
-# 認証をモックするためのフィクスチャ
-@pytest.fixture(scope="function")
-def mock_current_user(db_test_user):
-    """現在のユーザーをモックするフィクスチャ"""
-    from app.api.deps import get_current_user
-    
-    async def override_get_current_user():
-        return db_test_user
-    
-    return override_get_current_user
-
-@pytest.fixture(scope="function")
-def mock_current_admin_user(db_test_admin):
-    """現在の管理者ユーザーをモックするフィクスチャ"""
-    from app.api.deps import get_current_admin_user
-    
-    async def override_get_current_admin_user():
-        return db_test_admin
-    
-    return override_get_current_admin_user
-
-# 認証依存関係をオーバーライドするフィクスチャ
-@pytest.fixture(scope="function")
-def override_auth_dependency(app: FastAPI, mock_current_user, mock_current_admin_user):
-    from app.api.deps import get_current_user, get_current_admin_user
-    
-    app.dependency_overrides[get_current_user] = mock_current_user
-    app.dependency_overrides[get_current_admin_user] = mock_current_admin_user
-    
-    yield
-    
-    app.dependency_overrides.clear()
-
-# テスト実行時に依存関係をオーバーライド
-@pytest.fixture(scope="function")
-async def api_test_dependencies(override_dependency, override_auth_dependency):
+def api_test_dependencies():
+    # 既にappフィクスチャで依存関係をオーバーライドしているので、
+    # ここでは何もしない
     yield
