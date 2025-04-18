@@ -10,7 +10,17 @@ class Settings(BaseSettings):
     # ロギング設定
     LOG_LEVEL: str = "INFO"
     LOG_TO_FILE: bool = False
-    LOG_FILE_PATH: str = "logs/auth_service.log"
+    LOG_FILE_PATH: str = "logs/user_service.log"
+    
+    # RabbitMQ設定
+    RABBITMQ_HOST: str = "rabbitmq"
+    RABBITMQ_PORT: int = 5672
+    RABBITMQ_USER: str = "guest"
+    RABBITMQ_PASSWORD: str = "guest"
+    RABBITMQ_VHOST: str = "/"
+    USER_SYNC_EXCHANGE: str = "user_events"
+    USER_SYNC_ROUTING_KEY: str = "user.sync"
+    USER_SYNC_QUEUE: str = "user_service_sync"
     
     # データベース設定
     POSTGRES_USER: str

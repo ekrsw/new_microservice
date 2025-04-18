@@ -14,6 +14,7 @@ from app.db.init import Database
 from app.db.session import AsyncSessionLocal
 from app.crud.user import user
 from app.schemas.user import AdminUserCreate
+from app.messaging.rabbitmq import rabbitmq_client
 
 # ログディレクトリの作成（ファイルログが有効な場合）
 if settings.LOG_TO_FILE:
@@ -32,14 +33,20 @@ async def lifespan(app: FastAPI):
         await db.init()
         app_logger.info("Database initialized successfully")
         
+        # RabbitMQ接続の初期化とメッセージ受信開始
+        await rabbitmq_client.initialize()
+        await rabbitmq_client.start_consuming()
+        app_logger.info("RabbitMQ message consumption started")
+        
     except Exception as e:
-        app_logger.error(f"Error initializing database: {e}")
+        app_logger.error(f"Error initializing application: {e}")
         raise
     
     yield  # アプリケーションの実行中
     
     # 終了時の処理
     app_logger.info("Shutting down application")
+    await rabbitmq_client.close()
 
 
 # FastAPIアプリケーションの作成

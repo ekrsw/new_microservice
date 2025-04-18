@@ -5,6 +5,7 @@ from uuid import UUID
 
 # 共通のプロパティを持つUserBaseクラス
 class UserBase(BaseModel):
+    username: Optional[str] = None
     fullname: Optional[str] = None
     is_active: Optional[bool] = True
     is_admin: Optional[bool] = None
@@ -12,7 +13,8 @@ class UserBase(BaseModel):
 
 # 新規ユーザー作成時に必要なプロパティ
 class UserCreate(BaseModel):
-    fullname: str = Field(..., min_length=1, max_length=50)
+    username: str = Field(..., min_length=1, max_length=50)
+    fullname: Optional[str] = Field(None, max_length=50)
 
 
 # 管理者が作成するユーザー
@@ -22,12 +24,14 @@ class AdminUserCreate(UserCreate):
 
 # ユーザー更新時に使うプロパティ（パスワード更新は含まない）
 class UserUpdate(UserBase):
+    username: Optional[str] = Field(None, max_length=50)
     fullname: Optional[str] = Field(None, max_length=50)
 
 
 # ユーザープロファイル情報
 class UserProfile(BaseModel):
-    fullname: str
+    username: str
+    fullname: Optional[str]
     is_active: bool
     is_admin: bool
 
@@ -63,7 +67,8 @@ class RefreshToken(BaseModel):
 # レスポンスとして返すユーザー情報
 class UserInDBBase(UserBase):
     id: UUID
-    fullname: str
+    username: str
+    fullname: Optional[str]
     user_id: UUID
     is_active: bool
     is_admin: bool
@@ -81,6 +86,7 @@ class User(UserInDBBase):
 
 # ユーザー検索用のクエリパラメータ
 class UserSearchParams(BaseModel):
+    username: Optional[str] = None
     fullname: Optional[str] = None
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None

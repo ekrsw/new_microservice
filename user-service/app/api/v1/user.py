@@ -165,22 +165,22 @@ async def create_user(
     新規ユーザーを作成するエンドポイント（管理者のみ）
     """
     logger = get_request_logger(request)
-    logger.info(f"ユーザー作成リクエスト: フルネーム={user_in.fullname}, 要求元={current_user.id}")
+    logger.info(f"ユーザー作成リクエスト: ユーザー名={user_in.username}, フルネーム={user_in.fullname}, 要求元={current_user.id}")
     
     # ユーザー名の重複チェック
-    existing_user = await user.get_by_fullname(db, fullname=user_in.fullname)
+    existing_user = await user.get_by_username(db, username=user_in.username)
     if existing_user:
-        logger.warning(f"ユーザー作成失敗: フルネーム '{user_in.fullname}' は既に使用されています")
+        logger.warning(f"ユーザー作成失敗: ユーザー名 '{user_in.username}' は既に使用されています")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="このフルネームは既に登録されています"
+            detail="このユーザー名は既に登録されています"
         )
     
     try:
         # ユーザー作成
         new_user = await user.create(db, user_in)
         await db.commit()
-        logger.info(f"ユーザー作成成功: ID={new_user.id}, フルネーム={new_user.fullname}, 管理者={new_user.is_admin}")
+        logger.info(f"ユーザー作成成功: ID={new_user.id}, ユーザー名={new_user.username}, フルネーム={new_user.fullname}, 管理者={new_user.is_admin}")
         return new_user
     except IntegrityError:
         await db.rollback()
@@ -226,7 +226,7 @@ async def update_user(
         # ユーザー更新
         updated_user = await user.update(db, db_user, user_in)
         await db.commit()
-        logger.info(f"ユーザー更新成功: ID={updated_user.id}, フルネーム={updated_user.fullname}")
+        logger.info(f"ユーザー更新成功: ID={updated_user.id}, ユーザー名={updated_user.username}, フルネーム={updated_user.fullname}")
         return updated_user
     except IntegrityError:
         await db.rollback()
@@ -278,7 +278,7 @@ async def delete_user(
         # ユーザー削除
         await user.delete(db, db_user)
         await db.commit()
-        logger.info(f"ユーザー削除成功: ID={user_id}, フルネーム={db_user.fullname}")
+        logger.info(f"ユーザー削除成功: ID={user_id}, ユーザー名={db_user.username}, フルネーム={db_user.fullname}")
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:
         await db.rollback()
@@ -293,6 +293,7 @@ async def delete_user(
 @router.get("/users/search", response_model=List[UserResponse])
 async def search_users(
     request: Request,
+    username: Optional[str] = None,
     fullname: Optional[str] = None,
     is_active: Optional[bool] = None,
     is_admin: Optional[bool] = None,
@@ -303,10 +304,11 @@ async def search_users(
     条件に基づいてユーザーを検索するエンドポイント（管理者のみ）
     """
     logger = get_request_logger(request)
-    logger.info(f"ユーザー検索リクエスト: 条件=[fullname={fullname}, is_active={is_active}, is_admin={is_admin}], 要求元={current_user.id}")
+    logger.info(f"ユーザー検索リクエスト: 条件=[username={username}, fullname={fullname}, is_active={is_active}, is_admin={is_admin}], 要求元={current_user.id}")
     
     # 検索条件の構築
     search_params = UserSearchParams(
+        username=username,
         fullname=fullname,
         is_active=is_active,
         is_admin=is_admin
@@ -323,6 +325,7 @@ async def search_users(
 async def sync_user(
     request: Request,
     user_id: UUID = Body(...),
+    username: str = Body(...),
     fullname: str = Body(...),
     is_admin: bool = Body(...),
     is_active: bool = Body(...),
@@ -333,7 +336,7 @@ async def sync_user(
     - 内部APIとして使用（APIキーなどでの保護が必要）
     """
     logger = get_request_logger(request)
-    logger.info(f"ユーザー同期リクエスト: ユーザーID={user_id}, フルネーム={fullname}")
+    logger.info(f"ユーザー同期リクエスト: ユーザーID={user_id}, ユーザー名={username}, フルネーム={fullname}")
     
     # TODO: API認証の実装（X-API-Keyなど）
     
@@ -342,6 +345,7 @@ async def sync_user(
         synced_user = await user.sync_user(
             db=db,
             user_id=user_id,
+            username=username,
             fullname=fullname,
             is_admin=is_admin,
             is_active=is_active
@@ -349,7 +353,7 @@ async def sync_user(
         await db.commit()
         
         action = "更新" if await user.get_by_user_id(db, user_id) else "作成"
-        logger.info(f"ユーザー同期成功: ID={synced_user.id}, フルネーム={synced_user.fullname}, アクション={action}")
+        logger.info(f"ユーザー同期成功: ID={synced_user.id}, ユーザー名={synced_user.username}, フルネーム={synced_user.fullname}, アクション={action}")
         return synced_user
     except IntegrityError:
         await db.rollback()

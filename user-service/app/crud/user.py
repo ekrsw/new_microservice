@@ -14,6 +14,7 @@ class CRUDUser:
         
         # ユーザーオブジェクトの作成
         db_obj = User(
+            username=obj_in.username,
             fullname=obj_in.fullname,
             is_admin=is_admin
         )
@@ -38,6 +39,11 @@ class CRUDUser:
         result = await db.execute(select(User).filter(User.user_id == user_id))
         return result.scalar_one_or_none()
 
+    async def get_by_username(self, db: AsyncSession, username: str) -> Optional[User]:
+        """ユーザー名でユーザーを取得"""
+        result = await db.execute(select(User).filter(User.username == username))
+        return result.scalar_one_or_none()
+        
     async def get_by_fullname(self, db: AsyncSession, fullname: str) -> Optional[User]:
         """フルネームでユーザーを取得"""
         result = await db.execute(select(User).filter(User.fullname == fullname))
@@ -47,6 +53,8 @@ class CRUDUser:
         """条件によるユーザー検索"""
         query = select(User)
         
+        if params.username:
+            query = query.filter(User.username.ilike(f"%{params.username}%"))
         if params.fullname:
             query = query.filter(User.fullname.ilike(f"%{params.fullname}%"))
         if params.is_active is not None:
@@ -60,6 +68,8 @@ class CRUDUser:
     async def update(self, db: AsyncSession, db_obj: User, obj_in: UserUpdate) -> User:
         """ユーザー情報の更新"""
         try:
+            if obj_in.username is not None:
+                db_obj.username = obj_in.username
             if obj_in.fullname is not None:
                 db_obj.fullname = obj_in.fullname
             if obj_in.is_active is not None:
@@ -78,7 +88,7 @@ class CRUDUser:
         await db.delete(db_obj)
         await db.flush()
 
-    async def sync_user(self, db: AsyncSession, user_id: UUID, fullname: str, is_admin: bool, is_active: bool) -> User:
+    async def sync_user(self, db: AsyncSession, user_id: UUID, username: str, fullname: Optional[str] = None, is_admin: bool = False, is_active: bool = True) -> User:
         """
         Auth Serviceからのユーザー同期
         - user_idが存在すれば更新、なければ作成
@@ -88,7 +98,9 @@ class CRUDUser:
         
         if db_user:
             # 既存ユーザーの更新
-            db_user.fullname = fullname
+            db_user.username = username
+            if fullname is not None:
+                db_user.fullname = fullname
             db_user.is_admin = is_admin
             db_user.is_active = is_active
             await db.flush()
@@ -98,6 +110,7 @@ class CRUDUser:
             # 新規ユーザーの作成
             db_obj = User(
                 user_id=user_id,
+                username=username,
                 fullname=fullname,
                 is_admin=is_admin,
                 is_active=is_active
