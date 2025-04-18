@@ -1,5 +1,4 @@
 from uuid import UUID
-from typing import Annotated, Union, Optional
 
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
