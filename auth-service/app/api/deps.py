@@ -38,7 +38,6 @@ async def get_current_user(
     )
     
     try:
-        # 移行期間中は両方の方式をサポート
         payload = await verify_token(token)
         if payload is None:
             raise credentials_exception

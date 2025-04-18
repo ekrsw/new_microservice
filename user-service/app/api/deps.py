@@ -2,6 +2,7 @@ from uuid import UUID
 from typing import Annotated, Union, Optional
 
 from fastapi import Depends, HTTPException, status, Header
+from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,8 @@ from app.db.session import get_db
 from app.crud.user import user
 from app.models.user import User
 
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 async def validate_token(token: str) -> dict:
     """
@@ -35,21 +38,12 @@ async def validate_token(token: str) -> dict:
 
 
 async def get_current_user(
-    authorization: Annotated[Union[str, None], Header()] = None, 
+    token: str = Depends(oauth2_scheme), 
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """
     現在のユーザーを取得する
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="認証されていません",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    token = authorization.replace("Bearer ", "")
-    
     try:
         # トークンの検証
         payload = await validate_token(token)
