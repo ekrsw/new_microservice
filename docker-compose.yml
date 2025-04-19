@@ -20,6 +20,12 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 # ボリュームの定義
 volumes:
   rabbitmq_data:
@@ -28,5 +34,4 @@ volumes:
 networks:
   microservice_network:
     name: "${COMMON_NETWORK}"
-    driver: bridge  
-  
+    driver: bridge

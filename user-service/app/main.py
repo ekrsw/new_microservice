@@ -13,7 +13,7 @@ from app.core.logging import app_logger, get_request_logger
 from app.db.init import Database
 from app.db.session import AsyncSessionLocal
 from app.crud.user import user
-from app.schemas.user import AdminUserCreate
+from app.schemas.user import AdminUserCreate, UserSearchParams
 from app.messaging.rabbitmq import rabbitmq_client
 
 # ログディレクトリの作成（ファイルログが有効な場合）
@@ -33,10 +33,59 @@ async def lifespan(app: FastAPI):
         await db.init()
         app_logger.info("Database initialized successfully")
         
-        # RabbitMQ接続の初期化とメッセージ受信開始
+        # RabbitMQ接続の初期化
         await rabbitmq_client.initialize()
-        await rabbitmq_client.start_consuming()
-        app_logger.info("RabbitMQ message consumption started")
+        app_logger.info("RabbitMQ connection initialized")
+        
+        # RabbitMQの設定情報をログに出力（トラブルシューティング用）
+        app_logger.debug(f"RabbitMQ設定: HOST={settings.RABBITMQ_HOST}, "
+                         f"EXCHANGE={settings.USER_SYNC_EXCHANGE}, "
+                         f"ROUTING_KEY={settings.USER_SYNC_ROUTING_KEY}")
+        
+        # 初期管理者ユーザーの作成
+        try:
+            async with AsyncSessionLocal() as db:
+                # 管理者ユーザーが存在するか確認
+                admin_users = await user.search_users(db, params=UserSearchParams(is_admin=True))
+                
+                if not admin_users:
+                    # 管理者ユーザーが存在しない場合は作成
+                    admin_user_data = AdminUserCreate(
+                        username="admin",
+                        fullname="System Administrator",
+                        is_admin=True
+                    )
+                    
+                    # ユーザー作成
+                    new_admin = await user.create(db, obj_in=admin_user_data)
+                    await db.commit()
+                    app_logger.info(f"初期管理者ユーザーを作成しました: ID={new_admin.id}")
+                    
+                    # RabbitMQにユーザー作成イベントを発行
+                    user_data = {
+                        "id": str(new_admin.id),
+                        "username": new_admin.username,
+                        "fullname": new_admin.fullname,
+                        "is_admin": new_admin.is_admin,
+                        "is_active": new_admin.is_active
+                    }
+                    
+                    event_published = await rabbitmq_client.publish_user_created_event(user_data)
+                    if event_published:
+                        app_logger.info("初期管理者ユーザー作成イベントを発行しました")
+                    else:
+                        app_logger.warning("初期管理者ユーザー作成イベントの発行に失敗しました")
+                else:
+                    app_logger.info("管理者ユーザーが既に存在するため、初期管理者ユーザーの作成をスキップします")
+        except Exception as e:
+            app_logger.error(f"初期管理者ユーザーの作成中にエラーが発生しました: {e}", exc_info=True)
+        
+        # RabbitMQメッセージ受信開始（ユーザー作成処理の後に実行）
+        try:
+            await rabbitmq_client.start_consuming()
+            app_logger.info("RabbitMQ message consumption started")
+        except Exception as e:
+            app_logger.error(f"RabbitMQメッセージ受信開始エラー: {e}", exc_info=True)
         
     except Exception as e:
         app_logger.error(f"Error initializing application: {e}")

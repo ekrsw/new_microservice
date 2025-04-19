@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional, Callable
 from uuid import UUID
 
 import aio_pika
+import uuid
 from aio_pika import ExchangeType, IncomingMessage
 
 from app.core.config import settings
@@ -180,6 +181,52 @@ class RabbitMQClient:
                     self.logger.warning(f"ユーザー削除失敗: ユーザーID '{user_id}' が存在しません")
         except Exception as e:
             self.logger.error(f"ユーザー削除イベント処理エラー: {str(e)}", exc_info=True)
+            
+    async def publish_user_created_event(self, user_data: Dict[str, Any]):
+        """ユーザー作成イベントを発行する"""
+        self.logger.debug(f"ユーザー作成イベント発行開始: {user_data}")
+        
+        if not self.is_initialized:
+            self.logger.debug("RabbitMQクライアントが初期化されていないため初期化します")
+            await self.initialize()
+            
+        try:
+            message_body = {
+                "event_type": "user.created",
+                "user_data": user_data
+            }
+            
+            # メッセージIDの生成
+            message_id = str(uuid.uuid4())
+            
+            # ログにメッセージ内容を出力
+            self.logger.debug(f"送信メッセージ: {json.dumps(message_body)}")
+            self.logger.debug(f"ルーティングキー: {settings.USER_SYNC_ROUTING_KEY}")
+            
+            # メッセージの作成と送信
+            message = aio_pika.Message(
+                body=json.dumps(message_body).encode(),
+                content_type="application/json",
+                message_id=message_id,
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            )
+            
+            # メッセージの送信
+            await self.exchange.publish(
+                message,
+                routing_key=settings.USER_SYNC_ROUTING_KEY
+            )
+            
+            self.logger.info(f"ユーザー作成イベントを発行しました: user_id={user_data.get('id')}, message_id={message_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"ユーザー作成イベント発行エラー: {str(e)}", exc_info=True)
+            # 詳細なエラー情報を提供
+            if self.exchange is None:
+                self.logger.error("エラー詳細: exchangeがNoneです")
+            elif self.connection is None or self.connection.is_closed:
+                self.logger.error("エラー詳細: RabbitMQ接続が閉じられているか存在しません")
+            return False
 
 
 # シングルトンインスタンス
