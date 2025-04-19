@@ -11,8 +11,10 @@ from app.db.session import get_db
 from app.crud.user import user
 from app.models.user import User
 
+from app.core.config import settings
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=settings.AUTH_SERVICE_URL)
 
 async def validate_token(token: str) -> dict:
     """
@@ -22,7 +24,7 @@ async def validate_token(token: str) -> dict:
         # JWTの署名検証
         payload = jwt.decode(
             token, 
-            settings.JWT_PUBLIC_KEY, 
+            settings.PUBLIC_KEY, 
             algorithms=[settings.ALGORITHM],
             options={"verify_aud": False}
         )

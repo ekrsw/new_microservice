@@ -29,7 +29,11 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str
     POSTGRES_DB: str
 
+    # auth-service設定
+    AUTH_SERVICE_INTERNAL_PORT: int = 8080
+    
     # トークン設定
+    ALGORITHM: str = "RS256"
     PUBLIC_KEY_PATH: str = "keys/public.pem"   # 公開鍵のパス
     
     @property
@@ -37,6 +41,11 @@ class Settings(BaseSettings):
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     SQLALCHEMY_ECHO: bool = False  # SQLAlchemyのログ出力設定を追加
+
+    @property
+    def AUTH_SERVICE_URL(self) -> str:
+        """認証サービスのURL"""
+        return f"http://localhost:{self.AUTH_SERVICE_INTERNAL_PORT}/api/v1/auth/login"
 
     @property
     def PUBLIC_KEY(self) -> str:
