@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
         try:
             async with AsyncSessionLocal() as db:
                 # 管理者ユーザーが存在するか確認
-                admin_users = await user.search_users(db, params=UserSearchParams(is_admin=True))
+                admin_users = await user.search_users(db, params=UserSearchParams(username=settings.INITIAL_ADMIN_USERNAME))
                 
                 if not admin_users:
                     # 管理者ユーザーが存在しない場合は作成

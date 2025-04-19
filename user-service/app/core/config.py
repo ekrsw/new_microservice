@@ -31,6 +31,8 @@ class Settings(BaseSettings):
 
     # auth-service設定
     AUTH_SERVICE_INTERNAL_PORT: int = 8080
+    INITIAL_ADMIN_USERNAME: str = "admin"
+    INITIAL_ADMIN_PASSWORD: str = "changeme"  # 本番環境では強力なパスワードに変更
     
     # トークン設定
     ALGORITHM: str = "RS256"

@@ -5,7 +5,7 @@ from uuid import UUID
 from jose import JWTError, jwt
 from pydantic import ValidationError
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status, Request, Response
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -723,4 +723,52 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="ユーザー削除中にエラーが発生しました"
+        )
+
+# RabbitMQメッセージングエンドポイント
+@router.post("/sync/user", response_model=UserResponse)
+async def sync_user(
+    request: Request,
+    user_id: UUID = Body(...),
+    username: str = Body(...),
+    is_admin: bool = Body(...),
+    is_active: bool = Body(...),
+    db: AsyncSession = Depends(get_db)
+) -> Any:
+    """
+    auth-serviceからのユーザー同期イベントを受け取るエンドポイント
+    - 内部APIとして使用（APIキーなどでの保護が必要）
+    """
+    logger = get_request_logger(request)
+    logger.info(f"ユーザー同期リクエスト: ユーザーID={user_id}, ユーザー名={username}")
+    
+    # TODO: API認証の実装（X-API-Keyなど）
+    
+    try:
+        # ユーザー同期
+        synced_user = await user.sync_user(
+            db=db,
+            user_id=user_id,
+            username=username,
+            is_admin=is_admin,
+            is_active=is_active
+        )
+        await db.commit()
+        
+        action = "更新" if await user.get_by_user_id(db, user_id) else "作成"
+        logger.info(f"ユーザー同期成功: ID={synced_user.id}, ユーザー名={synced_user.username}, フルネーム={synced_user.fullname}, アクション={action}")
+        return synced_user
+    except IntegrityError:
+        await db.rollback()
+        logger.error(f"ユーザー同期失敗: データベースエラー", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ユーザー同期に失敗しました。データの整合性エラー。"
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"ユーザー同期失敗: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ユーザー同期中にエラーが発生しました"
         )
