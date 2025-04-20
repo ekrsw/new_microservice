@@ -57,6 +57,7 @@ class UserInDBBase(UserBase):
     username: str
     is_admin: bool
     is_active: bool
+    user_id: Optional[UUID] = None
 
     model_config = {
         "from_attributes": True,

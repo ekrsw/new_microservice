@@ -38,6 +38,20 @@ class CRUDUser:
     async def get_by_username(self, db: AsyncSession, username: str) -> Optional[AuthUser]:
         result = await db.execute(select(AuthUser).filter(AuthUser.username == username))
         return result.scalar_one_or_none()
+        
+    async def get_by_user_id(self, db: AsyncSession, user_id: UUID) -> Optional[AuthUser]:
+        """
+        user_idフィールドによるユーザー検索
+        
+        Args:
+            db: データベースセッション
+            user_id: 検索対象のuser_id（user-serviceのUserモデルのid）
+            
+        Returns:
+            Optional[AuthUser]: 見つかったユーザーまたはNone
+        """
+        result = await db.execute(select(AuthUser).filter(AuthUser.user_id == user_id))
+        return result.scalar_one_or_none()
 
     async def update(self, db: AsyncSession, db_obj: AuthUser, obj_in: UserUpdate) -> AuthUser:
         try:
